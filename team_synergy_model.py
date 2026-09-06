@@ -1,65 +1,135 @@
 import numpy as np
+import pandas as pd
+from scipy.optimize import minimize
 
-class TeamSynergySpatialModel:
+class BraveEtAlSynergyModel:
     """
-    A basic implementation of a spatial factor model for measuring team synergy,
-    inspired by "Uncovering the sources of team synergy" (Brave et al., 2019).
+    Implementation of the Spatial Factor Model for MLB Team Synergy
+    based on "Uncovering the sources of team synergy" (Brave et al., 2019).
     
-    This model attempts to quantify the indirect effects of teammate interactions
-    (synergy) on overall team performance beyond the sum of individual contributions (e.g. WAR).
+    This model computes player-specific productivity residuals based on their
+    playing time and models them using a spatial autoregressive (SAR) structure 
+    to capture teammate interactions.
     """
-    def __init__(self, rho=0.5):
+    
+    def __init__(self, alpha=50.0):
         """
-        Initialize the spatial factor model.
-        :param rho: Spatial autoregressive parameter representing the strength of 
-                    network interactions (spillover effects) among teammates.
+        :param alpha: Expected wins for a team of replacement level players (~50 wins).
         """
-        self.rho = rho
+        self.alpha = alpha
+        self.rho = None
         
-    def fit_team_synergy(self, player_war: np.ndarray, adjacency_matrix: np.ndarray):
+    def expected_win_contribution(self, team_wins, kappa, is_pitcher):
         """
-        Calculate team synergy using a spatial autoregressive (SAR) approach.
+        Calculates a player's expected contribution to team wins based on playing time.
+        Formula (7): \hat{W}_{int} = \eta_{it} \tau_{it} (W_{nt} - \hat{\alpha})
         
-        y = ρWy + Xβ + ε
-        In a simplified factor model, the synergy factor (spillover) can be estimated by
-        evaluating the spatial multiplier: (I - ρW)^-1
-        
-        :param player_war: 1D array of individual player metrics (e.g., WAR) for a team.
-        :param adjacency_matrix: 2D array (W) representing the strength of interaction 
-                                 between players (e.g., playing time together, positional links).
-                                 Usually row-normalized.
-        :return: A tuple containing the total team value, the baseline sum, and the synergy component.
+        :param team_wins: Total actual wins of the team.
+        :param kappa: Appearance weights for each player (\tau proxy).
+        :param is_pitcher: Boolean array indicating if the player is a pitcher.
         """
-        n_players = len(player_war)
-        identity = np.eye(n_players)
+        tau = np.zeros_like(kappa)
+        hitters = ~is_pitcher
+        pitchers = is_pitcher
         
-        # Calculate the spatial multiplier matrix: (I - ρW)^(-1)
-        try:
-            spatial_multiplier = np.linalg.inv(identity - self.rho * adjacency_matrix)
-        except np.linalg.LinAlgError:
-            raise ValueError("The matrix (I - ρW) is singular. Check the value of rho and W.")
+        # Normalize appearance weights separately for hitters and pitchers
+        if np.sum(hitters) > 0:
+            tau[hitters] = kappa[hitters] / np.sum(kappa[hitters])
+        if np.sum(pitchers) > 0:
+            tau[pitchers] = kappa[pitchers] / np.sum(kappa[pitchers])
             
-        # The synergistic player contributions considering the network
-        synergistic_war = spatial_multiplier @ player_war
+        # \eta ratio for apportioning league wins to pitchers vs hitters (0.43 vs 0.57)
+        eta = np.where(is_pitcher, 0.43, 0.57) 
         
-        baseline_team_value = np.sum(player_war)
-        total_team_value = np.sum(synergistic_war)
-        synergy_component = total_team_value - baseline_team_value
+        # Expected wins
+        w_hat = eta * tau * (team_wins - self.alpha)
+        return w_hat
         
-        return total_team_value, baseline_team_value, synergy_component, synergistic_war
+    def construct_adjacency_matrix(self, kappa):
+        """
+        Constructs the adjacency matrix A based on appearance weights \kappa.
+        A_{ijt} = \kappa_{it} + \kappa_{jt} for i \neq j, 0 otherwise.
+        """
+        n = len(kappa)
+        A = np.zeros((n, n))
+        for i in range(n):
+            for j in range(n):
+                if i != j:
+                    A[i, j] = kappa[i] + kappa[j]
+                    
+        # Row-normalize the matrix to create proper spatial weights
+        row_sums = A.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1.0 
+        A_norm = A / row_sums
+        return A_norm
 
-def generate_sample_data(n_players=9):
+    def fit(self, player_war, kappa, is_pitcher, team_wins):
+        """
+        Fits the spatial model to calculate synergy metrics.
+        
+        Process:
+        1. Calculate Expected Wins (\hat{W})
+        2. Calculate Productivity Residuals (\hat{\epsilon} = \hat{W} - WAR)
+        3. Construct Adjacency Matrix A
+        4. Estimate spatial correlation \rho by modeling \hat{\epsilon} = \rho A \hat{\epsilon} + v
+        """
+        n = len(player_war)
+        
+        # 1. Expected Wins
+        w_hat = self.expected_win_contribution(team_wins, kappa, is_pitcher)
+        
+        # 2. Player Productivity Residuals (Formula 4)
+        residuals = w_hat - player_war
+        
+        # 3. Teammate Interaction Network
+        A = self.construct_adjacency_matrix(kappa)
+        
+        # 4. Estimate \rho via Sum of Squared Errors of fundamental shocks (v)
+        # v = (I - \rho A) \hat{\epsilon}
+        def objective(rho):
+            I = np.eye(n)
+            v = (I - rho * A) @ residuals
+            return np.sum(v**2)
+            
+        res = minimize(objective, x0=0.1, bounds=[(-0.99, 0.99)])
+        self.rho = res.x[0]
+        
+        # Calculate components
+        I = np.eye(n)
+        v = (I - self.rho * A) @ residuals
+        
+        # Synergy effect (spillover) = \rho A \hat{\epsilon} = \hat{\epsilon} - v
+        # This maps to pcWAR (Player Complementarity WAR) - the net impact on teammates
+        pcWAR = residuals - v 
+        
+        # Total Team Synergy (tcWAR)
+        tcWAR = np.sum(pcWAR)
+        
+        return {
+            'expected_wins': w_hat,
+            'productivity_residuals': residuals,
+            'fundamental_shocks': v,
+            'pcWAR': pcWAR,
+            'tcWAR': tcWAR,
+            'rho': self.rho,
+            'A': A
+        }
+
+def generate_sample_data(n_players=15):
     """
-    Generate synthetic baseball data for 9 players to test the synergy model.
+    Generate synthetic baseball data for a team of 15 players (10 hitters, 5 pitchers)
     """
     np.random.seed(42)
-    player_war = np.random.uniform(0.5, 5.0, n_players)
+    is_pitcher = np.array([False]*10 + [True]*5)
     
-    W = np.random.uniform(0, 1, (n_players, n_players))
-    np.fill_diagonal(W, 0)
+    # Base WAR
+    player_war = np.random.uniform(-0.5, 5.0, n_players)
     
-    # Row normalize
-    row_sums = W.sum(axis=1)
-    W_normalized = W / row_sums[:, np.newaxis]
+    # Kappa (appearance weights - proxy for PA and Innings Pitched)
+    kappa = np.random.uniform(0.1, 1.0, n_players)
+    kappa[is_pitcher] = kappa[is_pitcher] * 0.5 
     
-    return player_war, W_normalized
+    # Actual Team Wins (simulating a slight synergy over-performance)
+    team_wins = int(np.sum(player_war) + 50 + np.random.normal(2, 4))
+    
+    return player_war, kappa, is_pitcher, team_wins

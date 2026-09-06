@@ -1,35 +1,33 @@
 # Team Synergy Analysis (Brave et al., 2019)
 
-이 프로젝트는 Zotero에 저장된 논문 **"Uncovering the sources of team synergy: Player complementarities in the production of wins" (Scott Brave 외, 2019)**에서 제안된 '팀 시너지' 측정 방법론을 파이썬으로 구현한 것입니다.
+이 프로젝트는 Zotero에 저장된 논문 **"Uncovering the sources of team synergy: Player complementarities in the production of wins" (Scott Brave 외, 2019)**에서 제안된 '팀 시너지' 측정 방법론을 엄밀한 논문 수식 기반으로 파이썬으로 구현한 것입니다.
 
-## 방법론 요약
-이 연구는 단순히 개인의 기량(WAR)의 합이 팀의 전체 성과와 일치하지 않는다는 점에서 착안하여, 선수들 간의 상호작용(네트워크 효과)을 정량화합니다.
-**공간 요인 모형 (Spatial Factor Model)**을 도입하여 다음과 같은 개념을 측정합니다:
-- **공간 승수 (Spatial Multiplier):** `(I - ρW)^(-1)` 행렬을 통해 팀 네트워크에서 선수가 발휘하는 직간접적 파급 효과(Spillover)를 계산합니다.
+## 논문의 주요 수식 반영 내역
+초기 코드는 일반화된 공간 요인 모형(Spatial Factor Model) 형태만을 띠고 있었으나, 해당 논문의 원문을 직접 파싱하여 논문에서 제시한 특수한 야구 특화 변수와 수식을 그대로 코드에 이식했습니다.
 
-## 필요한 데이터 형태
-이 모델을 실제 데이터로 실험하기 위해서는 다음 두 가지 데이터가 필요합니다:
+1. **생산성 잔차(Productivity Residuals)의 도출 (수식 4 & 7)**
+   논문에서는 WAR 수치의 단순 합과 실제 팀 승수 간의 오차를 기반으로 분석을 시작합니다.
+   - 각 선수의 '기대 팀 승수 기여도($\hat{W}_{int}$)'는 팀의 전체 승수에서 대체선수 수준(약 50승)을 뺀 값을 투수/타자의 비율(0.43/0.57, $\eta_{it}$)과 타석/이닝 소화 비중($\tau_{it}$)에 따라 배분하여 계산합니다.
+   - 선수의 생산성 잔차($\hat{\epsilon}_{int}$) = $\hat{W}_{int}$ - $WAR_{int}$ 로 정의됩니다.
 
-1. **개인 역량 지표 벡터 (Player WAR, 1D Array)**
-   - 각 선수의 독립적인 기량 지표입니다. 야구의 경우 대체 선수 대비 승리기여도(WAR)를 사용하며, 선수 수(`N`)만큼의 길이를 가진 1차원 벡터 형태여야 합니다.
+2. **네트워크 가중치 행렬 구성 (수식 8의 $\alpha_{ijt}$)**
+   - 팀원 간의 상호작용 행렬 $A$는 단순히 1과 0으로 이루어진 것이 아니라, 선수의 출전 비중 지표($\kappa_{it}$)들의 합으로 구성됩니다. 출전 시간이 길고 타순/포지션 중요도가 높을수록 동료와의 상호작용(Spillover) 가능성도 높게 산정됩니다.
 
-2. **상호작용 인접 행렬 (Adjacency Matrix, 2D Array)**
-   - 팀원들 간의 상호작용 강도를 나타내는 `N x N` 크기의 가중치 행렬 `W`입니다.
-   - 예: 포지션 간의 연관성, 타순의 인접성, 특정 선수들이 함께 경기에 뛴 시간 비율 등.
-   - 각 행의 합이 1이 되도록 정규화(Row-normalized)하는 것이 일반적입니다.
+3. **공간 자귀회귀(SAR)와 시너지 효과(pcWAR, tcWAR)**
+   - $\hat{\epsilon} = \rho A \hat{\epsilon} + v$ 라는 SAR 모형을 이용해 $\rho$(공간 계수)를 추정합니다.
+   - 기초 충격(Fundamental shocks, $v$)과 $\hat{\epsilon}$의 차이($\rho A \hat{\epsilon}$)가 동료에 의해 발생한 **선수 간 보완효과(Player Complementarity WAR, pcWAR)**로 정의됩니다.
+   - 팀 전체의 pcWAR 합산이 바로 팀 시너지(tcWAR)가 됩니다.
 
 ## 파일 구성
-- `team_synergy_model.py`: 공간 승수 알고리즘을 이용해 시너지를 구하는 파이썬 클래스(`TeamSynergySpatialModel`)가 구현되어 있습니다.
-- `experiment.ipynb`: 작성된 모델을 테스트하고 시뮬레이션 해볼 수 있는 주피터 노트북입니다.
-- `requirements.txt`: 실행에 필요한 파이썬 패키지 목록입니다.
+- `team_synergy_model.py`: 위 논문의 실제 수식을 반영한 파이썬 모형(`BraveEtAlSynergyModel`) 파일.
+- `experiment.ipynb`: 작성된 모델을 테스트하고 시뮬레이션 해볼 수 있는 주피터 노트북.
+- `requirements.txt`: 실행에 필요한 파이썬 패키지 목록.
 
 ## 실행 방법 (환경 설정)
-이 프로젝트는 파이썬 패키지 `numpy`를 필요로 합니다. 주피터 노트북을 실행하려면 `jupyter`도 설치해야 합니다.
+이 프로젝트는 파이썬 패키지 `numpy`, `scipy` 등을 필요로 합니다. 주피터 노트북을 실행하려면 `jupyter`와 `pandas`도 설치해야 합니다.
 
 ```bash
-# 가상환경 생성 및 패키지 설치
-python -m venv .venv
-source .venv/bin/activate
+# 패키지 설치
 pip install -r requirements.txt
 
 # 주피터 노트북 실행
