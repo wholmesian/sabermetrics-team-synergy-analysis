@@ -1,4 +1,13 @@
 numpy
 pandas
 scipy
+matplotlib
 jupyter
+pytest
+statsmodels
+linearmodels
+pyarrow
+pyyaml
+
+# Optional: WAR data collection from FanGraphs and Baseball-Reference
+# pybaseball

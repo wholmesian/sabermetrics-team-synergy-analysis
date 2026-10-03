@@ -1,7 +1,41 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-.ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+venv/
 .venv/
 env/
-venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Data: raw is never tracked (re-collect via scripts); small processed files are tracked
+data/raw/*
+!data/raw/.gitkeep
+data/interim/
+*.parquet
+*.feather
+*.pkl
+# Synthetic-data runs are regenerable (`synergy estimate --synthetic`)
+data/processed/synthetic/
+
+# Outputs: generated tables and figures
+outputs/**
+!outputs/**/
+!outputs/**/.gitkeep
+
+# Secrets / local config
+.env
+.env.*
+CLAUDE.local.md

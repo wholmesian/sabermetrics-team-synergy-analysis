@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=65.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "team-synergy"
+version = "0.1.0"
+description = "Python implementation of Brave, Butters & Roberts (2019) team synergy model"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Team Synergy Contributors"}
+]
+keywords = ["baseball", "sabermetrics", "team-synergy", "spatial-regression"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+]
+
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "statsmodels",
+    "linearmodels",
+    "pyarrow",
+    "pyyaml",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+data = ["pybaseball"]
+dev = ["pytest", "jupyter"]
+
+[project.scripts]
+synergy = "team_synergy.cli:main"
+
+[tool.setuptools]
+packages = ["team_synergy"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

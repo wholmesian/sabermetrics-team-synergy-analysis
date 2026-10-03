@@ -1,0 +1,73 @@
+seasons:
+  start: 1998
+  end: 2016
+
+war_source: fwar  # fwar | bwar
+
+# Spec §2: League WAR allocation (η) – batting/pitching split.
+# fWAR: batting 0.57, pitching 0.43.
+# bWAR: batting 0.59, pitching 0.41.
+eta:
+  fwar:
+    bat: 0.57
+    pit: 0.43
+  bwar:
+    bat: 0.59
+    pit: 0.41
+
+# Sign convention for residuals (Spec §3, footnote 1).
+# consistent: y = WAR − Ŵ/β̂ (default; matches reported Table 1 / Fig. 4 facts).
+# paper_literal: y = Ŵ/β̂ − WAR (paper eq. 4 sign: ε = Ŵ − WAR).
+sign_convention: consistent  # consistent | paper_literal
+
+# Team regression slope β̂ used in y = WAR − Ŵ/β̂ and tcWAR = −β̂ Σ in (Spec §3, §10).
+# estimated: OLS β̂ from eq. (1).
+# fixed_one: β = 1.
+beta_mode: estimated  # estimated | fixed_one
+
+# History mode for teammate network matrix A (Spec §4, paper α_ijt).
+# past: A_{ijt} edges from stints in season t and prior (s ≤ t).
+# full: A_{ijt} edges from all seasons in sample (ignores time).
+history: past  # past | full
+
+# Spec §4: optional lineup-adjacency kernel exp(-|slot_i - slot_j|/h) on α_ij (not in paper's formal definition).
+adjacency_kernel:
+  enabled: false
+  h: 1.0
+
+# Spec §5: two-factor model estimator.
+# als: plan A, Stock-Watson style EM-ALS (paper Appendix 7.2).
+# prob: plan B, probabilistic factor model EM (robustness).
+factor_method: als  # als | prob
+culture_lambda_source: prob  # prob | als — source of λ for organizational-culture rankings (Fig. 3); plan A λ is start-dependent
+
+# Spec §5: Weighted least squares for factor models.
+# appearance: weight by appearance weight η·τ.
+# none: unweighted.
+wls_weights: appearance  # appearance | none
+
+# Spec §5: Parameters for alternating least squares (factor_method: als).
+factor:
+  n_starts: 20        # random λ⁰ restarts for rank-stability report
+  scale: tp_var       # tp_var (Var(tp)=1, spec §5) | lambda_norm (λ'λ = 1, paper App. 7.2 ΛΛ'=I analogue)
+  tol: 1.0e-9         # convergence tolerance
+  prob_tol: 1.0e-7    # plan B (factor_prob) relative log-likelihood tolerance
+  max_iter: 5000      # maximum number of iterations
+
+# Spec §5: Bounds on SAR coefficient ρ.
+sar:
+  bounds: [-0.999, 0.999]
+
+# Spec §2: fWAR allocation across stints (Spec §1).
+# kappa: allocate by κ_it (play intensity; default, matches paper assumption).
+# games: allocate proportional to games played in stint.
+fwar_allocation: kappa  # kappa | games
+
+# Random seed for reproducibility.
+seed: 0
+
+# File paths (resolved relative to repo root).
+paths:
+  raw: data/raw
+  processed: data/processed
+  outputs: outputs
