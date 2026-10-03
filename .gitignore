@@ -30,6 +30,9 @@ data/interim/
 # Synthetic-data runs are regenerable (`synergy estimate --synthetic`)
 data/processed/synthetic/
 
+# Papers: keep PDFs local (redistribution terms unclear); the folder stays via .gitkeep
+docs/papers/*.pdf
+
 # Outputs: generated tables and figures
 outputs/**
 !outputs/**/

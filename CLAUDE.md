@@ -23,7 +23,7 @@ tests/              pytest
 notebooks/          실험·시각화 (결과 출력은 가볍게 유지)
 data/raw/           원자료 (untracked)
 data/processed/     가공 데이터 (소용량만 tracked)
-docs/papers/        논문 PDF
+docs/papers/        논문 PDF (git 제외, 로컬에만 보관)
 ```
 
 ## 명령어
