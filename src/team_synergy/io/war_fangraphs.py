@@ -119,47 +119,56 @@ def load_fwar(raw_dir: Path, seasons: tuple[int, int] = (1998, 2016)) -> dict[st
     return {"bat": bat_df, "pit": pit_df}
 
 
-def fetch_fwar(raw_dir: Path, seasons: tuple[int, int] = (1998, 2016)) -> None:
-    """Download and save FanGraphs WAR data using pybaseball.
+FG_API_URL = ("https://www.fangraphs.com/api/leaders/major-league/data?pos=all&stats={stats}&lg=all"
+              "&qual=0&season={y}&season1={y}&type=8&month=0&ind=0&pageitems=2000000")
 
-    Uses pybaseball.batting_stats() and pitching_stats() to fetch season-level data.
-    Saves to data/raw/fangraphs/fg_batting.csv and fg_pitching.csv.
 
-    Params:
-        raw_dir: Path to data/raw/ directory
-        seasons: Tuple (start_year, end_year) inclusive (passed to pybaseball)
+def _fg_season_frame(stats: str, year: int) -> pd.DataFrame:
+    """One season of the FanGraphs leaderboard JSON API (public, unauthenticated) as a DataFrame."""
+    import re
+    from .download import http_get
 
-    Raises:
-        MissingRawDataError: If download fails or pybaseball is not available.
-    """
+    r = http_get(FG_API_URL.format(stats=stats, y=year))
     try:
-        import pybaseball
-    except ImportError:
-        raise MissingRawDataError(
-            "pybaseball not installed. Install with: pip install pybaseball\n"
-            "Or manually export from:\n"
-            "  https://www.fangraphs.com/leaders.aspx\n"
-            f"  Save to data/raw/fangraphs/{FWAR_BAT_FILE} and {FWAR_PIT_FILE}"
-        )
+        rows = r.json()["data"]
+    except (ValueError, KeyError) as e:
+        raise MissingRawDataError(f"unexpected FanGraphs response for {stats} {year}: {e}")
+    df = pd.DataFrame(rows)
+    if df.empty or "playerid" not in df.columns:
+        raise MissingRawDataError(f"empty/unexpected FanGraphs response for {stats} {year}")
+    strip = lambda x: re.sub(r"<[^>]*>", "", x) if isinstance(x, str) else x
+    df["Name"] = df["Name"].map(strip)
+    if "Team" in df.columns:
+        df["Team"] = df["Team"].map(strip)
+    return df.rename(columns={"playerid": "IDfg"})
+
+
+def fetch_fwar(raw_dir: Path, seasons: tuple[int, int] = (1998, 2016), force: bool = False) -> None:
+    """Download season-level FanGraphs batting/pitching WAR to data/raw/fangraphs/fg_{batting,pitching}.csv.
+
+    Uses FanGraphs' public leaderboard JSON endpoint one season at a time (WAR is not an
+    available export without login otherwise). If the endpoint is blocked (e.g. 403), nothing is
+    worked around: MissingRawDataError gives manual export instructions. Output has the columns
+    IDfg, Season, Name, Team, WAR (+ all leaderboard columns) as ``load_fwar`` expects.
+    """
+    from .download import record
 
     fgraphs_dir = raw_dir / "fangraphs"
     fgraphs_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        start_year, end_year = seasons
-
-        logger.info(f"Fetching FanGraphs WAR batting data ({start_year}–{end_year})...")
-        bat_df = pybaseball.batting_stats(start_season=start_year, end_season=end_year, qual=0)
-        bat_df.to_csv(fgraphs_dir / FWAR_BAT_FILE, index=False)
-
-        logger.info(f"Fetching FanGraphs WAR pitching data ({start_year}–{end_year})...")
-        pit_df = pybaseball.pitching_stats(start_season=start_year, end_season=end_year, qual=0)
-        pit_df.to_csv(fgraphs_dir / FWAR_PIT_FILE, index=False)
-
-        logger.info(f"Saved fWAR data to {fgraphs_dir}/")
-    except Exception as e:
-        raise MissingRawDataError(
-            f"Failed to fetch fWAR data: {e}\n"
-            "Manually export from https://www.fangraphs.com/leaders.aspx\n"
-            f"and save to {fgraphs_dir}/"
-        )
+    start_year, end_year = seasons
+    manual = (f"Manually export the batting/pitching leaderboards (qual=0, all seasons, incl. WAR) from\n"
+              f"  https://www.fangraphs.com/leaders.aspx\n"
+              f"and save to {fgraphs_dir}/{FWAR_BAT_FILE} and {FWAR_PIT_FILE} (columns IDfg, Season, Name, WAR)")
+    for stats, fname in (("bat", FWAR_BAT_FILE), ("pit", FWAR_PIT_FILE)):
+        dest = fgraphs_dir / fname
+        if dest.exists() and not force:
+            continue
+        try:
+            frames = []
+            for y in range(start_year, end_year + 1):
+                logger.info(f"Fetching FanGraphs {stats} WAR {y}...")
+                frames.append(_fg_season_frame(stats, y))
+            pd.concat(frames, ignore_index=True).to_csv(dest, index=False)
+        except MissingRawDataError as e:
+            raise MissingRawDataError(f"Failed to fetch fWAR data: {e}\n{manual}")
+        record(raw_dir, dest, FG_API_URL.format(stats=stats, y="{year}"))

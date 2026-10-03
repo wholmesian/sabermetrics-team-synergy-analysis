@@ -58,6 +58,48 @@ def _cmd_build(args) -> int:
     return 0
 
 
+FETCH_SOURCES = ("lahman", "retrosheet", "bref", "fangraphs", "chadwick")
+
+
+def _cmd_fetch(args) -> int:
+    """Download raw MLB data into data/raw/ (each source independent), write MANIFEST.json, cross-check."""
+    from team_synergy import io as tio
+    from team_synergy.io.crosscheck import run_checks
+
+    cfg = _load_cfg(args)
+    raw_dir = Path(args.raw_dir) if args.raw_dir else _resolve(cfg, "raw")
+    seasons = (cfg["seasons"]["start"], cfg["seasons"]["end"])
+    only = [x.strip() for x in args.only.split(",")] if args.only else list(FETCH_SOURCES)
+    bad = [x for x in only if x not in FETCH_SOURCES]
+    if bad:
+        raise SystemExit(f"--only: unknown source(s) {bad}; choose from {list(FETCH_SOURCES)}")
+    fetchers = {
+        "lahman": lambda: tio.fetch_lahman(raw_dir, force=args.force),
+        "retrosheet": lambda: tio.fetch_gamelogs(raw_dir, seasons, force=args.force),
+        "bref": lambda: tio.fetch_bwar(raw_dir, force=args.force),
+        "fangraphs": lambda: tio.fetch_fwar(raw_dir, seasons, force=args.force),
+        "chadwick": lambda: tio.fetch_register(raw_dir, force=args.force),
+    }
+    failed = []
+    if not args.check_only:
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        for name in only:
+            try:
+                fetchers[name]()
+                print(f"[ok]   {name}")
+            except tio.MissingRawDataError as e:
+                failed.append(name)
+                print(f"[FAIL] {name}: {e}")
+            except Exception as e:  # keep other sources going
+                failed.append(name)
+                print(f"[FAIL] {name}: unexpected {type(e).__name__}: {e}")
+    run_checks(raw_dir, seasons)
+    if failed:
+        print(f"\nmissing sources: {', '.join(failed)} (see instructions above)")
+        return 2
+    return 0
+
+
 def _culture_lines(res: dict, cfg: dict) -> list[str]:
     lw = res["lambda_windows"]
     last = lw[lw["window_end"] == lw["window_end"].max()].sort_values("rank", ascending=False)
@@ -207,6 +249,13 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--n-jobs", type=int, default=1)
     e.add_argument("--synthetic-teams", type=int, default=30)
     e.add_argument("--synthetic-roster", type=int, default=45)
+    f = sub.add_parser("fetch", help="Download raw data into data/raw/ and cross-check (spec section 1).")
+    common(f, war=False)
+    f.add_argument("--league", choices=["mlb"], default="mlb")
+    f.add_argument("--force", action="store_true", help="re-download files that already exist")
+    f.add_argument("--only", default=None, help=f"comma-separated subset of {','.join(FETCH_SOURCES)}")
+    f.add_argument("--check-only", action="store_true", help="skip downloads; run the cross-checks only")
+    f.add_argument("--raw-dir", default=None, help="raw data directory (default paths.raw)")
     a = sub.add_parser("analyze", help="Tables and figures (spec section 8).")
     common(a, war=False)
     a.add_argument("--war", choices=["fwar", "bwar"], default=None,
@@ -233,7 +282,7 @@ def main(argv=None) -> int:
     if args.command is None:
         parser.print_help()
         return 0
-    return {"build": _cmd_build, "estimate": _cmd_estimate, "analyze": _cmd_analyze}[args.command](args)
+    return {"build": _cmd_build, "fetch": _cmd_fetch, "estimate": _cmd_estimate, "analyze": _cmd_analyze}[args.command](args)
 
 
 if __name__ == "__main__":

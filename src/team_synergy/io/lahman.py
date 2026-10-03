@@ -80,3 +80,44 @@ def load_lahman(raw_dir: Path) -> dict[str, pd.DataFrame]:
 
     logger.info(f"Loaded Lahman database: {len(tables)} tables from {lahman_dir}")
     return tables
+
+
+LAHMAN_PAGE = "https://sabr.org/lahman-database/"
+
+
+def fetch_lahman(raw_dir: Path, force: bool = False) -> list[Path]:
+    """Place the SABR Lahman CSV tables in data/raw/lahman/.
+
+    SABR publishes the CSV zip only through rotating Box share links (no stable direct URL), and
+    the former Chadwick ``baseballdatabank`` GitHub mirror is gone, so this cannot be downloaded
+    reproducibly. Behaviour: if the tables already exist, nothing happens; if a Lahman ``*.zip``
+    was placed in data/raw/lahman/ by hand, it is extracted (CSV members found at any depth);
+    otherwise MissingRawDataError gives manual instructions. Source is recorded as the SABR page.
+    """
+    import zipfile
+    from .download import has_entry, record
+
+    lahman_dir = Path(raw_dir) / "lahman"
+    lahman_dir.mkdir(parents=True, exist_ok=True)
+    wanted = [lahman_dir / f"{n}.csv" for n in LAHMAN_FILES]
+
+    if force or not all(p.exists() for p in wanted):
+        for zpath in sorted(lahman_dir.glob("*.zip")):
+            with zipfile.ZipFile(zpath) as zf:
+                for member in zf.namelist():
+                    stem = Path(member).name
+                    if stem.endswith(".csv") and stem[:-4] in LAHMAN_FILES:
+                        (lahman_dir / stem).write_bytes(zf.read(member))
+    missing = [p.name for p in wanted if not p.exists()]
+    if missing:
+        raise MissingRawDataError(
+            f"Lahman CSV tables not found in {lahman_dir}: {', '.join(missing)}\n"
+            f"  SABR offers no stable direct download link. Open {LAHMAN_PAGE}, download the\n"
+            f"  'Comma-delimited version' zip, and either unzip the CSVs into {lahman_dir}/\n"
+            f"  or drop the zip there and re-run `synergy fetch --only lahman`.\n"
+            f"  (needs {', '.join(LAHMAN_FILES)} .csv; use a release covering 1998-2016)"
+        )
+    for p in wanted:
+        if not has_entry(raw_dir, p):
+            record(raw_dir, p, LAHMAN_PAGE)
+    return wanted

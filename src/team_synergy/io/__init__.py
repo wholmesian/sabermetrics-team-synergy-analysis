@@ -16,6 +16,8 @@ __all__ = [
     "mapping_failure_rate",
     "load_pecota",
     "fetch_pecota",
+    "fetch_lahman",
+    "fetch_gamelogs",
 ]
 
 
@@ -27,8 +29,8 @@ class MissingRawDataError(FileNotFoundError):
     pass
 
 
-from .lahman import load_lahman, canonical_franchise
-from .retrosheet import load_gamelogs, lineup_starts
+from .lahman import load_lahman, canonical_franchise, fetch_lahman
+from .retrosheet import load_gamelogs, lineup_starts, fetch_gamelogs
 from .war_bref import load_bwar, fetch_bwar
 from .war_fangraphs import load_fwar, fetch_fwar
 from .idmap import load_register, fetch_register, build_idmap, mapping_failure_rate

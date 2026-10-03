@@ -25,6 +25,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "requests",
     "numpy",
     "scipy",
     "pandas",
@@ -37,6 +38,8 @@ dependencies = [
 
 [project.optional-dependencies]
 data = ["pybaseball"]
+fetch = ["pybaseball"]
+
 dev = ["pytest", "jupyter"]
 
 [project.scripts]

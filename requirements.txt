@@ -8,6 +8,7 @@ statsmodels
 linearmodels
 pyarrow
 pyyaml
+requests
 
 # Optional: WAR data collection from FanGraphs and Baseball-Reference
 # pybaseball

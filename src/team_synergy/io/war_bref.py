@@ -132,44 +132,30 @@ def load_bwar(raw_dir: Path, seasons: tuple[int, int] = (1998, 2016)) -> dict[st
     return {"bat": bat_df, "pit": pit_df}
 
 
-def fetch_bwar(raw_dir: Path) -> None:
-    """Download and save Baseball-Reference WAR data using pybaseball.
+BWAR_URL = "https://www.baseball-reference.com/data/{name}"
 
-    Uses pybaseball.bwar_bat() and pybaseball.bwar_pitch() to fetch data.
-    Saves to data/raw/bref/war_daily_bat.txt and war_daily_pitch.txt.
 
-    Params:
-        raw_dir: Path to data/raw/ directory
+def fetch_bwar(raw_dir: Path, force: bool = False) -> None:
+    """Download war_daily_bat.txt / war_daily_pitch.txt from baseball-reference.com/data/ to data/raw/bref/.
 
-    Raises:
-        MissingRawDataError: If download fails or pybaseball is not available.
+    Baseball-Reference sits behind Cloudflare and usually answers 403 to scripts. Per the spec rule
+    this is NOT worked around: on failure MissingRawDataError gives manual instructions.
     """
-    try:
-        import pybaseball
-    except ImportError:
-        raise MissingRawDataError(
-            "pybaseball not installed. Install with: pip install pybaseball\n"
-            "Or manually download WAR files from:\n"
-            "  https://www.baseball-reference.com/data/\n"
-            "  Save to data/raw/bref/war_daily_bat.txt and war_daily_pitch.txt"
-        )
+    from .download import download_file
 
     bref_dir = raw_dir / "bref"
     bref_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        logger.info("Fetching Baseball-Reference bWAR batting data...")
-        bat_df = pybaseball.bwar_bat()
-        bat_df.to_csv(bref_dir / BWAR_BAT_FILE, index=False)
-
-        logger.info("Fetching Baseball-Reference bWAR pitching data...")
-        pit_df = pybaseball.bwar_pitch()
-        pit_df.to_csv(bref_dir / BWAR_PIT_FILE, index=False)
-
-        logger.info(f"Saved bWAR data to {bref_dir}/")
-    except Exception as e:
+    failed = []
+    for name in (BWAR_BAT_FILE, BWAR_PIT_FILE):
+        try:
+            download_file(BWAR_URL.format(name=name), bref_dir / name, raw_dir, force=force)
+        except MissingRawDataError as e:
+            failed.append(str(e))
+            break  # same host, same block: do not hammer it
+    if failed:
         raise MissingRawDataError(
-            f"Failed to fetch bWAR data: {e}\n"
-            "Manually download from https://www.baseball-reference.com/data/\n"
-            f"and save to {bref_dir}/"
+            f"Failed to fetch bWAR data: {failed[0]}\n"
+            "Manually download war_daily_bat.txt and war_daily_pitch.txt in a browser from\n"
+            "  https://www.baseball-reference.com/data/\n"
+            f"and save them to {bref_dir}/"
         )

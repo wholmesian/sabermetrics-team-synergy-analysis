@@ -187,3 +187,44 @@ def lineup_starts(gamelogs: pd.DataFrame) -> pd.DataFrame:
     starts = gamelogs.groupby(["season", "team_retro", "retro_id", "slot"]).size().reset_index(name="starts")
     logger.info(f"Computed {len(starts)} (player, slot, team) starting combinations")
     return starts
+
+
+RETROSHEET_ZIP_URL = "https://www.retrosheet.org/gamelogs/gl{year}.zip"
+
+
+def fetch_gamelogs(raw_dir: Path, seasons: tuple[int, int] = (1998, 2016), force: bool = False) -> list[Path]:
+    """Download Retrosheet game logs gl{YYYY}.zip and unzip to data/raw/retrosheet/gl{YYYY}.txt.
+
+    Existing gl{YYYY}.txt files are kept unless ``force``. Raises MissingRawDataError listing the
+    seasons that failed (other seasons are still saved).
+    """
+    import io as _io
+    import zipfile
+    from .download import http_get, record
+
+    out_dir = Path(raw_dir) / "retrosheet"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    saved, failed = [], []
+    for year in range(seasons[0], seasons[1] + 1):
+        dest = out_dir / f"gl{year}.txt"
+        if dest.exists() and not force:
+            saved.append(dest)
+            continue
+        url = RETROSHEET_ZIP_URL.format(year=year)
+        try:
+            r = http_get(url)
+            with zipfile.ZipFile(_io.BytesIO(r.content)) as zf:
+                member = next(n for n in zf.namelist() if n.lower() == f"gl{year}.txt")
+                dest.write_bytes(zf.read(member))
+        except (MissingRawDataError, zipfile.BadZipFile, StopIteration) as e:
+            failed.append(f"{year} ({e})")
+            continue
+        record(raw_dir, dest, url)
+        saved.append(dest)
+    if failed:
+        raise MissingRawDataError(
+            f"Failed to fetch Retrosheet game logs: {'; '.join(failed)}\n"
+            f"Download gl{{YYYY}}.zip from https://www.retrosheet.org/gamelogs/ , unzip, "
+            f"and save as {out_dir}/gl{{YYYY}}.txt"
+        )
+    return saved

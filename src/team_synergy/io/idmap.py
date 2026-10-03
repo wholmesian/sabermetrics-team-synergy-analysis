@@ -58,7 +58,7 @@ def load_register(raw_dir: Path) -> pd.DataFrame:
             raise MissingRawDataError(msg)
 
         try:
-            dfs = [pd.read_csv(f) for f in split_files]
+            dfs = [pd.read_csv(f, low_memory=False) for f in split_files]
             df = pd.concat(dfs, ignore_index=True)
         except Exception as e:
             raise MissingRawDataError(f"Failed to read Chadwick split files: {e}")
@@ -82,40 +82,31 @@ def load_register(raw_dir: Path) -> pd.DataFrame:
     return df[required_cols]
 
 
-def fetch_register(raw_dir: Path) -> None:
-    """Download and save Chadwick register using pybaseball.
+CHADWICK_RAW_URL = "https://raw.githubusercontent.com/chadwickbureau/register/master/data/people-{k}.csv"
 
-    Uses pybaseball.chadwick_register() to fetch the register.
-    Saves to data/raw/chadwick/people.csv.
 
-    Params:
-        raw_dir: Path to data/raw/ directory
+def fetch_register(raw_dir: Path, force: bool = False) -> None:
+    """Download the Chadwick register split files people-0..f.csv from GitHub (raw) into data/raw/chadwick/.
+
+    No pybaseball needed. Existing files are kept unless ``force``.
 
     Raises:
-        MissingRawDataError: If download fails or pybaseball is not available.
+        MissingRawDataError: if any file could not be downloaded.
     """
-    try:
-        import pybaseball
-    except ImportError:
-        raise MissingRawDataError(
-            "pybaseball not installed. Install with: pip install pybaseball\n"
-            "Or download from:\n"
-            "  https://github.com/chadwickbureau/register/\n"
-            f"  Save to data/raw/chadwick/"
-        )
+    from .download import download_file
 
     chadwick_dir = raw_dir / "chadwick"
     chadwick_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        logger.info("Fetching Chadwick register...")
-        df = pybaseball.chadwick_register()
-        df.to_csv(chadwick_dir / CHADWICK_REGISTER_FILE, index=False)
-        logger.info(f"Saved Chadwick register to {chadwick_dir}/")
-    except Exception as e:
+    failed = []
+    for k in "0123456789abcdef":
+        try:
+            download_file(CHADWICK_RAW_URL.format(k=k), chadwick_dir / f"people-{k}.csv", raw_dir, force=force)
+        except MissingRawDataError as e:
+            failed.append(str(e))
+    if failed:
         raise MissingRawDataError(
-            f"Failed to fetch Chadwick register: {e}\n"
-            "Download from https://github.com/chadwickbureau/register/\n"
+            "Failed to fetch Chadwick register: " + "; ".join(failed) + "\n"
+            "Download data/people-*.csv from https://github.com/chadwickbureau/register/\n"
             f"and save to {chadwick_dir}/"
         )
 
